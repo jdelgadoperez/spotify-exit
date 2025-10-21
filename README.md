@@ -1,6 +1,8 @@
-# Spotify Data Export Tool
+# 🚪 Spotify Exit
 
-A Python script to export all your Spotify data before migrating to another music service. Exports playlists, saved tracks, albums, followed artists, podcasts, and listening statistics.
+**Your complete Spotify data export tool for a smooth migration to any music service.**
+
+A Python script to export all your Spotify data before leaving the platform. Exports playlists, saved tracks, albums, followed artists, podcasts, and listening statistics with migration-friendly formats (ISRC/UPC codes included).
 
 ## Features
 
