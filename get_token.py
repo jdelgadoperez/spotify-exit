@@ -10,6 +10,10 @@ from urllib.parse import urlencode
 import http.server
 import socketserver
 from urllib.parse import urlparse, parse_qs
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Spotify App Credentials
 # Create your app at: https://developer.spotify.com/dashboard
@@ -25,8 +29,9 @@ SCOPES = [
     "playlist-read-private",
     "playlist-read-collaborative",
     "user-read-email",
-    "user-read-private"
+    "user-read-private",
 ]
+
 
 class CallbackHandler(http.server.SimpleHTTPRequestHandler):
     """Handle OAuth callback."""
@@ -77,7 +82,7 @@ def get_authorization_url():
         "response_type": "code",
         "redirect_uri": REDIRECT_URI,
         "scope": " ".join(SCOPES),
-        "show_dialog": "true"
+        "show_dialog": "true",
     }
 
     auth_url = f"https://accounts.spotify.com/authorize?{urlencode(params)}"
@@ -95,19 +100,17 @@ def exchange_code_for_token(auth_code):
 
     headers = {
         "Authorization": f"Basic {b64_credentials}",
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/x-www-form-urlencoded",
     }
 
     data = {
         "grant_type": "authorization_code",
         "code": auth_code,
-        "redirect_uri": REDIRECT_URI
+        "redirect_uri": REDIRECT_URI,
     }
 
     response = requests.post(
-        "https://accounts.spotify.com/api/token",
-        headers=headers,
-        data=data
+        "https://accounts.spotify.com/api/token", headers=headers, data=data
     )
 
     if response.status_code == 200:
@@ -173,7 +176,9 @@ def main():
             print("=" * 60)
             print(f"\n{access_token}\n")
             print("=" * 60)
-            print(f"\nToken expires in: {expires_in} seconds ({expires_in/3600:.1f} hours)")
+            print(
+                f"\nToken expires in: {expires_in} seconds ({expires_in/3600:.1f} hours)"
+            )
             print(f"Refresh token: {refresh_token}")
 
             # Save to .env file

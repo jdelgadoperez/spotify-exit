@@ -17,12 +17,20 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+
 class SpotifyExporter:
     """Export Spotify user data using the Spotify Web API."""
 
     BASE_URL = "https://api.spotify.com/v1"
 
-    def __init__(self, access_token: str, client_id: str = None, client_secret: str = None, refresh_token: str = None, resume: bool = False):
+    def __init__(
+        self,
+        access_token: str,
+        client_id: str = None,
+        client_secret: str = None,
+        refresh_token: str = None,
+        resume: bool = False,
+    ):
         """Initialize with Spotify access token."""
         self.access_token = access_token
         self.client_id = client_id
@@ -30,10 +38,10 @@ class SpotifyExporter:
         self.refresh_token = refresh_token
         self.headers = {
             "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         self.user_id = None
-        self.exports_dir = "exports"
+        self.exports_dir = "exports/spotify"
         self.resume = resume
         self.progress_file = os.path.join(self.exports_dir, ".export_progress.json")
         os.makedirs(self.exports_dir, exist_ok=True)
@@ -41,7 +49,9 @@ class SpotifyExporter:
         # Set or load timestamp for this export session
         if resume:
             progress = self._load_progress()
-            self.timestamp = progress.get("timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
+            self.timestamp = progress.get(
+                "timestamp", datetime.now().strftime("%Y%m%d_%H%M%S")
+            )
         else:
             self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # Save timestamp to progress file
@@ -59,19 +69,14 @@ class SpotifyExporter:
 
         headers = {
             "Authorization": f"Basic {b64_credentials}",
-            "Content-Type": "application/x-www-form-urlencoded"
+            "Content-Type": "application/x-www-form-urlencoded",
         }
 
-        data = {
-            "grant_type": "refresh_token",
-            "refresh_token": self.refresh_token
-        }
+        data = {"grant_type": "refresh_token", "refresh_token": self.refresh_token}
 
         try:
             response = requests.post(
-                "https://accounts.spotify.com/api/token",
-                headers=headers,
-                data=data
+                "https://accounts.spotify.com/api/token", headers=headers, data=data
             )
             response.raise_for_status()
 
@@ -95,13 +100,13 @@ class SpotifyExporter:
         if not os.path.exists(env_path):
             return
 
-        with open(env_path, 'r') as f:
+        with open(env_path, "r") as f:
             lines = f.readlines()
 
-        with open(env_path, 'w') as f:
+        with open(env_path, "w") as f:
             for line in lines:
-                if line.startswith('SPOTIFY_ACCESS_TOKEN='):
-                    f.write(f'SPOTIFY_ACCESS_TOKEN={new_token}\n')
+                if line.startswith("SPOTIFY_ACCESS_TOKEN="):
+                    f.write(f"SPOTIFY_ACCESS_TOKEN={new_token}\n")
                 else:
                     f.write(line)
 
@@ -116,7 +121,7 @@ class SpotifyExporter:
         """Load export progress from file."""
         if os.path.exists(self.progress_file):
             try:
-                with open(self.progress_file, 'r') as f:
+                with open(self.progress_file, "r") as f:
                     return json.load(f)
             except:
                 return {}
@@ -124,7 +129,7 @@ class SpotifyExporter:
 
     def _save_progress(self, progress: Dict):
         """Save export progress to file."""
-        with open(self.progress_file, 'w') as f:
+        with open(self.progress_file, "w") as f:
             json.dump(progress, f, indent=2)
 
     def _mark_complete(self, section: str, timestamp: str):
@@ -179,7 +184,7 @@ class SpotifyExporter:
             return response.json()
         except requests.exceptions.RequestException as e:
             print(f"Error making request to {endpoint}: {e}")
-            if hasattr(e, 'response') and e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 print(f"Response status: {e.response.status_code}")
                 print(f"Response body: {e.response.text}")
             return {}
@@ -225,17 +230,19 @@ class SpotifyExporter:
         tracks_data = []
         for item in saved_tracks:
             track = item.get("track", {})
-            tracks_data.append({
-                "name": track.get("name") or "Unknown Track",
-                "artist": self._safe_join_artists(track.get("artists", [])),
-                "album": track.get("album", {}).get("name") or "Unknown Album",
-                "duration_ms": track.get("duration_ms"),
-                "release_date": track.get("album", {}).get("release_date"),
-                "added_at": item.get("added_at"),
-                "spotify_url": track.get("external_urls", {}).get("spotify"),
-                "uri": track.get("uri"),
-                "isrc": track.get("external_ids", {}).get("isrc")
-            })
+            tracks_data.append(
+                {
+                    "name": track.get("name") or "Unknown Track",
+                    "artist": self._safe_join_artists(track.get("artists", [])),
+                    "album": track.get("album", {}).get("name") or "Unknown Album",
+                    "duration_ms": track.get("duration_ms"),
+                    "release_date": track.get("album", {}).get("release_date"),
+                    "added_at": item.get("added_at"),
+                    "spotify_url": track.get("external_urls", {}).get("spotify"),
+                    "uri": track.get("uri"),
+                    "isrc": track.get("external_ids", {}).get("isrc"),
+                }
+            )
 
         print(f"Exported {len(tracks_data)} saved tracks")
         return tracks_data
@@ -269,14 +276,19 @@ class SpotifyExporter:
             for item in tracks:
                 track = item.get("track")
                 if track:  # Sometimes track can be None for deleted songs
-                    track_list.append({
-                        "name": track.get("name") or "Unknown Track",
-                        "artist": self._safe_join_artists(track.get("artists", [])),
-                        "album": track.get("album", {}).get("name") or "Unknown Album",
-                        "added_at": item.get("added_at"),
-                        "spotify_url": track.get("external_urls", {}).get("spotify"),
-                        "uri": track.get("uri")
-                    })
+                    track_list.append(
+                        {
+                            "name": track.get("name") or "Unknown Track",
+                            "artist": self._safe_join_artists(track.get("artists", [])),
+                            "album": track.get("album", {}).get("name")
+                            or "Unknown Album",
+                            "added_at": item.get("added_at"),
+                            "spotify_url": track.get("external_urls", {}).get(
+                                "spotify"
+                            ),
+                            "uri": track.get("uri"),
+                        }
+                    )
 
             playlist_data = {
                 "name": playlist_name,
@@ -287,23 +299,29 @@ class SpotifyExporter:
                 "tracks_total": playlist.get("tracks", {}).get("total"),
                 "spotify_url": playlist.get("external_urls", {}).get("spotify"),
                 "uri": playlist.get("uri"),
-                "tracks": track_list
+                "tracks": track_list,
             }
             playlists_data.append(playlist_data)
 
             # Save this playlist immediately to CSV
             if track_list:
                 safe_name = playlist_name.replace("/", "-").replace("\\", "-")
-                safe_name = "".join(c for c in safe_name if c.isalnum() or c in (' ', '-', '_')).strip()
+                safe_name = "".join(
+                    c for c in safe_name if c.isalnum() or c in (" ", "-", "_")
+                ).strip()
                 safe_name = safe_name[:100]  # Limit filename length
-                self.save_to_csv(track_list, f"playlist_{safe_name}_{self.timestamp}.csv")
+                self.save_to_csv(
+                    track_list, f"playlist_{safe_name}_{self.timestamp}.csv"
+                )
 
                 # Mark as complete
                 self._mark_playlist_complete(playlist_id, self.timestamp)
                 exported += 1
 
         if skipped > 0:
-            print(f"Exported {exported} playlists, skipped {skipped} already-exported playlists")
+            print(
+                f"Exported {exported} playlists, skipped {skipped} already-exported playlists"
+            )
         else:
             print(f"Exported {len(playlists_data)} playlists")
         return playlists_data
@@ -316,16 +334,18 @@ class SpotifyExporter:
         albums_data = []
         for item in saved_albums:
             album = item.get("album", {})
-            albums_data.append({
-                "name": album.get("name") or "Unknown Album",
-                "artist": self._safe_join_artists(album.get("artists", [])),
-                "release_date": album.get("release_date"),
-                "total_tracks": album.get("total_tracks"),
-                "added_at": item.get("added_at"),
-                "spotify_url": album.get("external_urls", {}).get("spotify"),
-                "uri": album.get("uri"),
-                "upc": album.get("external_ids", {}).get("upc")
-            })
+            albums_data.append(
+                {
+                    "name": album.get("name") or "Unknown Album",
+                    "artist": self._safe_join_artists(album.get("artists", [])),
+                    "release_date": album.get("release_date"),
+                    "total_tracks": album.get("total_tracks"),
+                    "added_at": item.get("added_at"),
+                    "spotify_url": album.get("external_urls", {}).get("spotify"),
+                    "uri": album.get("uri"),
+                    "upc": album.get("external_ids", {}).get("upc"),
+                }
+            )
 
         print(f"Exported {len(albums_data)} saved albums")
         return albums_data
@@ -354,14 +374,16 @@ class SpotifyExporter:
                 break
 
             for artist in batch:
-                artists_data.append({
-                    "name": artist.get("name") or "Unknown Artist",
-                    "genres": ", ".join(artist.get("genres", [])),
-                    "popularity": artist.get("popularity"),
-                    "followers": artist.get("followers", {}).get("total"),
-                    "spotify_url": artist.get("external_urls", {}).get("spotify"),
-                    "uri": artist.get("uri")
-                })
+                artists_data.append(
+                    {
+                        "name": artist.get("name") or "Unknown Artist",
+                        "genres": ", ".join(artist.get("genres", [])),
+                        "popularity": artist.get("popularity"),
+                        "followers": artist.get("followers", {}).get("total"),
+                        "spotify_url": artist.get("external_urls", {}).get("spotify"),
+                        "uri": artist.get("uri"),
+                    }
+                )
 
             print(f"  Fetched {len(artists_data)} artists...")
 
@@ -383,15 +405,17 @@ class SpotifyExporter:
         shows_data = []
         for item in saved_shows:
             show = item.get("show", {})
-            shows_data.append({
-                "name": show.get("name") or "Unknown Show",
-                "publisher": show.get("publisher") or "Unknown Publisher",
-                "description": show.get("description") or "",
-                "total_episodes": show.get("total_episodes"),
-                "added_at": item.get("added_at"),
-                "spotify_url": show.get("external_urls", {}).get("spotify"),
-                "uri": show.get("uri")
-            })
+            shows_data.append(
+                {
+                    "name": show.get("name") or "Unknown Show",
+                    "publisher": show.get("publisher") or "Unknown Publisher",
+                    "description": show.get("description") or "",
+                    "total_episodes": show.get("total_episodes"),
+                    "added_at": item.get("added_at"),
+                    "spotify_url": show.get("external_urls", {}).get("spotify"),
+                    "uri": show.get("uri"),
+                }
+            )
 
         print(f"Exported {len(shows_data)} saved shows")
         return shows_data
@@ -405,14 +429,16 @@ class SpotifyExporter:
 
         tracks_data = []
         for track in response.get("items", []):
-            tracks_data.append({
-                "name": track.get("name") or "Unknown Track",
-                "artist": self._safe_join_artists(track.get("artists", [])),
-                "album": track.get("album", {}).get("name") or "Unknown Album",
-                "popularity": track.get("popularity"),
-                "spotify_url": track.get("external_urls", {}).get("spotify"),
-                "uri": track.get("uri")
-            })
+            tracks_data.append(
+                {
+                    "name": track.get("name") or "Unknown Track",
+                    "artist": self._safe_join_artists(track.get("artists", [])),
+                    "album": track.get("album", {}).get("name") or "Unknown Album",
+                    "popularity": track.get("popularity"),
+                    "spotify_url": track.get("external_urls", {}).get("spotify"),
+                    "uri": track.get("uri"),
+                }
+            )
 
         print(f"Exported {len(tracks_data)} top tracks")
         return tracks_data
@@ -426,14 +452,16 @@ class SpotifyExporter:
 
         artists_data = []
         for artist in response.get("items", []):
-            artists_data.append({
-                "name": artist.get("name") or "Unknown Artist",
-                "genres": ", ".join(artist.get("genres", [])),
-                "popularity": artist.get("popularity"),
-                "followers": artist.get("followers", {}).get("total"),
-                "spotify_url": artist.get("external_urls", {}).get("spotify"),
-                "uri": artist.get("uri")
-            })
+            artists_data.append(
+                {
+                    "name": artist.get("name") or "Unknown Artist",
+                    "genres": ", ".join(artist.get("genres", [])),
+                    "popularity": artist.get("popularity"),
+                    "followers": artist.get("followers", {}).get("total"),
+                    "spotify_url": artist.get("external_urls", {}).get("spotify"),
+                    "uri": artist.get("uri"),
+                }
+            )
 
         print(f"Exported {len(artists_data)} top artists")
         return artists_data
@@ -441,7 +469,7 @@ class SpotifyExporter:
     def save_to_json(self, data: Dict, filename: str):
         """Save data to JSON file."""
         filepath = os.path.join(self.exports_dir, filename)
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         print(f"Saved to {filepath}")
 
@@ -452,7 +480,7 @@ class SpotifyExporter:
             return
 
         filepath = os.path.join(self.exports_dir, filename)
-        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        with open(filepath, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=data[0].keys())
             writer.writeheader()
             writer.writerows(data)
@@ -480,7 +508,7 @@ class SpotifyExporter:
             "email": profile.get("email"),
             "country": profile.get("country"),
             "product": profile.get("product"),
-            "followers": profile.get("followers", {}).get("total")
+            "followers": profile.get("followers", {}).get("total"),
         }
 
         # Export and save tracks immediately
@@ -514,7 +542,9 @@ class SpotifyExporter:
         if not self.resume or not self._is_complete("followed_artists", self.timestamp):
             followed_artists = self.export_followed_artists()
             if followed_artists:
-                self.save_to_csv(followed_artists, f"followed_artists_{self.timestamp}.csv")
+                self.save_to_csv(
+                    followed_artists, f"followed_artists_{self.timestamp}.csv"
+                )
                 self._mark_complete("followed_artists", self.timestamp)
                 print(f"✓ Saved followed artists to CSV\n")
         else:
@@ -536,7 +566,9 @@ class SpotifyExporter:
         if not self.resume or not self._is_complete("top_tracks", self.timestamp):
             top_tracks_long = self.export_top_tracks("long_term")
             if top_tracks_long:
-                self.save_to_csv(top_tracks_long, f"top_tracks_all_time_{self.timestamp}.csv")
+                self.save_to_csv(
+                    top_tracks_long, f"top_tracks_all_time_{self.timestamp}.csv"
+                )
                 self._mark_complete("top_tracks", self.timestamp)
                 print(f"✓ Saved top tracks to CSV\n")
         else:
@@ -547,7 +579,9 @@ class SpotifyExporter:
         if not self.resume or not self._is_complete("top_artists", self.timestamp):
             top_artists_long = self.export_top_artists("long_term")
             if top_artists_long:
-                self.save_to_csv(top_artists_long, f"top_artists_all_time_{self.timestamp}.csv")
+                self.save_to_csv(
+                    top_artists_long, f"top_artists_all_time_{self.timestamp}.csv"
+                )
                 self._mark_complete("top_artists", self.timestamp)
                 print(f"✓ Saved top artists to CSV\n")
         else:
@@ -565,7 +599,7 @@ class SpotifyExporter:
                 "followed_artists": followed_artists,
                 "saved_shows": saved_shows,
                 "top_tracks_all_time": top_tracks_long,
-                "top_artists_all_time": top_artists_long
+                "top_artists_all_time": top_artists_long,
             }
             self.save_to_json(full_export, f"spotify_full_export_{self.timestamp}.json")
             self._mark_complete("full_json", self.timestamp)
@@ -578,7 +612,9 @@ class SpotifyExporter:
         print(f"  - Saved Tracks: {len(saved_tracks) if saved_tracks else 'skipped'}")
         print(f"  - Playlists: {len(playlists)}")
         print(f"  - Saved Albums: {len(saved_albums) if saved_albums else 'skipped'}")
-        print(f"  - Followed Artists: {len(followed_artists) if followed_artists else 'skipped'}")
+        print(
+            f"  - Followed Artists: {len(followed_artists) if followed_artists else 'skipped'}"
+        )
         print(f"  - Saved Shows: {len(saved_shows) if saved_shows else 'skipped'}")
         print(f"\nAll files saved to '{self.exports_dir}/' directory")
 
@@ -614,7 +650,7 @@ def main():
     print("Validating access token...")
     test_response = requests.get(
         "https://api.spotify.com/v1/me",
-        headers={"Authorization": f"Bearer {access_token}"}
+        headers={"Authorization": f"Bearer {access_token}"},
     )
 
     if test_response.status_code == 401:
@@ -622,7 +658,9 @@ def main():
 
         if refresh_token and client_id and client_secret:
             print("Attempting to refresh token...")
-            exporter = SpotifyExporter(access_token, client_id, client_secret, refresh_token, resume=resume)
+            exporter = SpotifyExporter(
+                access_token, client_id, client_secret, refresh_token, resume=resume
+            )
             if exporter.refresh_access_token():
                 print("✓ Token refreshed successfully, starting export...\n")
                 exporter.export_all()
@@ -634,8 +672,12 @@ def main():
             print("Please run: python get_token.py")
     elif test_response.status_code == 200:
         user_info = test_response.json()
-        print(f"✓ Token valid for user: {user_info.get('display_name', user_info.get('id'))}\n")
-        exporter = SpotifyExporter(access_token, client_id, client_secret, refresh_token, resume=resume)
+        print(
+            f"✓ Token valid for user: {user_info.get('display_name', user_info.get('id'))}\n"
+        )
+        exporter = SpotifyExporter(
+            access_token, client_id, client_secret, refresh_token, resume=resume
+        )
         exporter.export_all()
     else:
         print(f"\nERROR: Unexpected response (status {test_response.status_code})")
