@@ -42,7 +42,7 @@ A Python script to export all your Spotify data before leaving the platform. Exp
 ### 1. Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ### 2. Get Spotify API Credentials
