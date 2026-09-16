@@ -47,39 +47,35 @@ uv sync
 
 ### 2. Get Spotify API Credentials
 
-You have two options:
-
-#### Option A: Quick Method (Web Console)
-
-1. Go to the [Spotify Web API Console](https://developer.spotify.com/console/get-current-user/)
-2. Click "Get Token"
-3. Select all required scopes (see below)
-4. Copy the generated token
-5. Create `.env` file with: `SPOTIFY_ACCESS_TOKEN=your_token_here`
-
-**Note**: Tokens from the console expire in 1 hour.
-
-#### Option B: OAuth Flow (Recommended)
-
-1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
+1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 2. Create a new app (or use an existing one)
-3. In app settings, add `http://localhost:8888/callback` to "Redirect URIs"
-4. Copy your Client ID and Client Secret
-5. Set environment variables:
+3. In app settings, add `http://127.0.0.1:8888/callback` to "Redirect URIs"
+
+   > **Use the IP, not `localhost`.** Spotify rejects `localhost` as a redirect
+   > URI host and requires an explicit loopback address. The dashboard may
+   > display your entry back as `localhost` after you refresh the page — it was
+   > still saved correctly. Navigate away and back to confirm.
+
+4. Copy your Client ID and Client Secret into a `.env` file:
    ```bash
-   export SPOTIFY_CLIENT_ID='your_client_id'
-   export SPOTIFY_CLIENT_SECRET='your_client_secret'
+   cp .env.example .env
+   # then edit .env and fill in SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET
    ```
-6. Run the token generator:
+5. Run the token generator:
    ```bash
-   python get_token.py
+   uv run get_token.py
    ```
-7. Follow the browser prompts to authorize
-8. Token will be automatically saved to `.env`
+6. Follow the browser prompts to authorize
+7. Your access and refresh tokens are saved to `.env` automatically
+
+Port 8888 already taken? Set `SPOTIFY_REDIRECT_PORT` in `.env` and register the
+matching URI in the dashboard — `get_token.py` prints the exact URI it will use
+each time it runs, so copy it from there.
 
 ### 3. Required API Scopes
 
-The following scopes are needed for complete data export:
+`get_token.py` requests these automatically and prints them at startup — the
+`SCOPES` list in `spotify_config.py` is authoritative if this list ever drifts:
 
 - `user-library-read` - Saved tracks and albums
 - `user-follow-read` - Followed artists
@@ -94,7 +90,7 @@ The following scopes are needed for complete data export:
 ### Basic Export
 
 ```bash
-python spotify_export.py
+uv run spotify_export.py
 ```
 
 This will export all your data to the `exports/` directory.
@@ -104,7 +100,7 @@ This will export all your data to the `exports/` directory.
 If your export gets interrupted (network issues, script crash, etc.), you can resume where you left off:
 
 ```bash
-python spotify_export.py --resume
+uv run spotify_export.py --resume
 ```
 
 **How resume works:**
@@ -190,17 +186,35 @@ exports/
 - Top 50 tracks (all-time)
 - Top 50 artists (all-time)
 
+## Running the Tests
+
+```bash
+uv run pytest
+```
+
+The suite covers the OAuth callback server and the `.env` writer. It runs
+entirely against a local loopback server and temporary files — no Spotify
+credentials or network access needed.
+
 ## Limitations
 
 - **Rate Limiting**: The script includes small delays to avoid hitting API rate limits
-- **Token Expiry**: Access tokens expire after 1 hour (console method) or when refresh token is used
+- **Token Expiry**: Access tokens expire after 1 hour; the script refreshes them automatically using the refresh token saved in `.env`
 - **Listening History**: Spotify doesn't provide complete listening history via API (only top items)
 - **Podcast Episodes**: Individual episode saves are not easily accessible via current API
 
 ## Troubleshooting
 
+### "INVALID_CLIENT: Invalid redirect URI"
+
+The redirect URI in the Spotify dashboard must match `http://127.0.0.1:8888/callback`
+exactly. Spotify no longer accepts `localhost` as the host — use the IP. If the
+dashboard shows `localhost` after a refresh, navigate away and back; the value you
+entered was saved.
+
 ### "Access token expired"
-Run `python get_token.py` again to get a fresh token.
+The script refreshes expired tokens automatically. If the refresh fails (for
+example, you revoked the app's access), run `uv run get_token.py` again.
 
 ### "Rate limit exceeded"
 Wait a few minutes and try again. The script includes rate limiting, but Spotify may still throttle requests.

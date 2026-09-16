@@ -9,13 +9,11 @@ import json
 import csv
 import os
 import time
-import base64
 from datetime import datetime
 from typing import Dict, List, Optional
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Importing this loads .env and shares the token endpoint with get_token.py
+from spotify_config import request_token, write_env
 
 
 class SpotifyExporter:
@@ -61,54 +59,24 @@ class SpotifyExporter:
         """Refresh the access token using the refresh token."""
         if not self.refresh_token or not self.client_id or not self.client_secret:
             print("\nERROR: Cannot refresh token - missing credentials")
-            print("Please run: python get_token.py")
+            print("Please run: uv run get_token.py")
             return False
 
-        credentials = f"{self.client_id}:{self.client_secret}"
-        b64_credentials = base64.b64encode(credentials.encode()).decode()
+        token_data = request_token(
+            self.client_id,
+            self.client_secret,
+            {"grant_type": "refresh_token", "refresh_token": self.refresh_token},
+        )
 
-        headers = {
-            "Authorization": f"Basic {b64_credentials}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-
-        data = {"grant_type": "refresh_token", "refresh_token": self.refresh_token}
-
-        try:
-            response = requests.post(
-                "https://accounts.spotify.com/api/token", headers=headers, data=data
-            )
-            response.raise_for_status()
-
-            token_data = response.json()
-            self.access_token = token_data.get("access_token")
-            self.headers["Authorization"] = f"Bearer {self.access_token}"
-
-            # Update .env file with new token
-            self._update_env_token(self.access_token)
-
-            print("✓ Access token refreshed successfully")
-            return True
-
-        except requests.exceptions.RequestException as e:
-            print(f"ERROR refreshing token: {e}")
+        if not token_data:
             return False
 
-    def _update_env_token(self, new_token: str):
-        """Update the access token in .env file."""
-        env_path = ".env"
-        if not os.path.exists(env_path):
-            return
+        self.access_token = token_data["access_token"]
+        self.headers["Authorization"] = f"Bearer {self.access_token}"
+        write_env(SPOTIFY_ACCESS_TOKEN=self.access_token)
 
-        with open(env_path, "r") as f:
-            lines = f.readlines()
-
-        with open(env_path, "w") as f:
-            for line in lines:
-                if line.startswith("SPOTIFY_ACCESS_TOKEN="):
-                    f.write(f"SPOTIFY_ACCESS_TOKEN={new_token}\n")
-                else:
-                    f.write(line)
+        print("✓ Access token refreshed successfully")
+        return True
 
     def _safe_join_artists(self, artists: List[Dict]) -> str:
         """Safely join artist names, handling None values."""
@@ -176,7 +144,7 @@ class SpotifyExporter:
                     response = requests.get(url, headers=self.headers, params=params)
                 else:
                     print("\nERROR: Token refresh failed")
-                    print("Please run: python get_token.py")
+                    print("Please run: uv run get_token.py")
                     raise Exception("Authentication failed - please refresh token")
 
             response.raise_for_status()
@@ -640,10 +608,12 @@ def main():
     refresh_token = os.getenv("SPOTIFY_REFRESH_TOKEN")
 
     if not access_token:
-        print("ERROR: SPOTIFY_ACCESS_TOKEN not found in environment variables")
-        print("\nPlease create a .env file with:")
-        print("SPOTIFY_ACCESS_TOKEN=your_token_here")
-        print("\nSee README.md for instructions on getting your access token")
+        print("ERROR: SPOTIFY_ACCESS_TOKEN not found")
+        print("\nTo authenticate:")
+        print("  1. cp .env.example .env")
+        print("  2. Fill in SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET")
+        print("  3. uv run get_token.py")
+        print("\nSee README.md for the full walkthrough")
         return
 
     # Validate token before starting
@@ -666,10 +636,10 @@ def main():
                 exporter.export_all()
             else:
                 print("\nERROR: Token refresh failed")
-                print("Please run: python get_token.py")
+                print("Please run: uv run get_token.py")
         else:
             print("\nERROR: Cannot refresh token - missing credentials")
-            print("Please run: python get_token.py")
+            print("Please run: uv run get_token.py")
     elif test_response.status_code == 200:
         user_info = test_response.json()
         print(
@@ -682,7 +652,7 @@ def main():
     else:
         print(f"\nERROR: Unexpected response (status {test_response.status_code})")
         print(f"Response: {test_response.text}")
-        print("\nPlease run: python get_token.py")
+        print("\nPlease run: uv run get_token.py")
 
 
 if __name__ == "__main__":
