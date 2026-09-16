@@ -30,6 +30,34 @@ CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
 # How long to wait for the user to authorize in the browser
 AUTH_TIMEOUT_SECONDS = 120
 
+# Cap on the error text echoed to the terminal
+MAX_ERROR_CHARS = 100
+
+
+def sanitize_for_terminal(text: str) -> str:
+    """Drop non-printable characters from text that reaches the terminal.
+
+    The reason is echoed to stdout, and anything arriving on the callback is
+    untrusted - escape sequences must not reach the TTY.
+    """
+    cleaned = "".join(c for c in text if c.isprintable())[:MAX_ERROR_CHARS]
+    return cleaned or "unspecified error"
+
+
+class CallbackServer(http.server.HTTPServer):
+    """Serves the OAuth callback and holds its outcome.
+
+    An authorization ends with exactly one of: a code, an authentic failure,
+    or neither (only unsolicited callbacks arrived, and we timed out).
+    """
+
+    def __init__(self, address, expected_state: str):
+        super().__init__(address, CallbackHandler)
+        self.expected_state = expected_state
+        self.auth_code = None
+        self.auth_error = None
+        self.ignored = 0
+
 
 class CallbackHandler(http.server.BaseHTTPRequestHandler):
     """Handle OAuth callback."""
@@ -44,11 +72,9 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def _rejection_reason(self, params: dict):
-        """Why this callback can't be accepted, or None if it's good."""
+        """Why an authentic callback can't be used, or None if it's good."""
         if "error" in params:
-            return params["error"][0]
-        if params.get("state", [None])[0] != self.server.expected_state:
-            return "state mismatch"
+            return sanitize_for_terminal(params["error"][0])
         if "code" not in params:
             return "no authorization code in callback"
         return None
@@ -64,6 +90,18 @@ class CallbackHandler(http.server.BaseHTTPRequestHandler):
             return
 
         params = parse_qs(parsed.query)
+
+        # Everything below this point trusts the query, so the state is checked
+        # first and nothing else is read until it matches. A callback that
+        # fails it is unsolicited: refuse it without recording an outcome, so
+        # it can neither end the flow nor put its own text on our terminal.
+        # Spotify returns the state on error responses too, so an `error` that
+        # skipped this check would be just as forgeable.
+        if params.get("state", [None])[0] != self.server.expected_state:
+            self.server.ignored += 1
+            self._respond(400, "<h1>Authorization Failed</h1><p>Unexpected.</p>")
+            return
+
         reason = self._rejection_reason(params)
 
         if reason:
@@ -143,16 +181,18 @@ def main():
 
     # Bind to loopback only - the redirect never comes from off-machine, and
     # binding every interface would expose the callback to the local network.
-    with http.server.HTTPServer((REDIRECT_HOST, REDIRECT_PORT), CallbackHandler) as httpd:
-        httpd.auth_code = None
-        httpd.auth_error = None
-        httpd.expected_state = state
-
+    with CallbackServer((REDIRECT_HOST, REDIRECT_PORT), state) as httpd:
         auth_url = get_authorization_url(state)
         print(f"\nIf the browser doesn't open, visit:\n{auth_url}\n")
         webbrowser.open(auth_url)
 
         wait_for_callback(httpd)
+
+        if httpd.ignored:
+            print(
+                f"\n⚠ Ignored {httpd.ignored} callback(s) that did not match "
+                "this session's state"
+            )
 
         if httpd.auth_error:
             print(f"\nERROR: {httpd.auth_error}")

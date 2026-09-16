@@ -17,12 +17,7 @@ def callback_server():
     started = []
 
     def start(timeout=10):
-        httpd = http.server.HTTPServer(
-            (spotify_config.REDIRECT_HOST, 0), get_token.CallbackHandler
-        )
-        httpd.auth_code = None
-        httpd.auth_error = None
-        httpd.expected_state = "test-state"
+        httpd = get_token.CallbackServer((spotify_config.REDIRECT_HOST, 0), "test-state")
 
         thread = threading.Thread(
             target=get_token.wait_for_callback, args=(httpd, timeout), daemon=True
@@ -72,9 +67,10 @@ def test_stray_request_does_not_end_the_flow(callback_server):
 @pytest.mark.parametrize(
     "query,expected_reason",
     [
-        ("code=abc&state=wrong-state", "state mismatch"),
         ("error=access_denied&state=test-state", "access_denied"),
         ("state=test-state", "no authorization code in callback"),
+        # The escape sequence must be stripped on the way to the terminal.
+        ("error=%1B%5B2Jaccess_denied&state=test-state", "[2Jaccess_denied"),
     ],
 )
 def test_rejections_report_their_own_reason(callback_server, query, expected_reason):
@@ -146,3 +142,46 @@ def test_write_env_creates_the_file_when_absent(tmp_path, monkeypatch):
 
     assert env.exists()
     assert "fresh" in env.read_text()
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "code=SENTINEL&state=wrong-state",
+        "error=SENTINEL",  # the error branch used to run before the state check
+        "error=SENTINEL&state=wrong-state",
+        "",
+    ],
+)
+def test_unsolicited_callback_cannot_end_the_flow(callback_server, query):
+    """A forged callback must not kill a legitimate authorization, or be echoed."""
+    httpd, port = callback_server()
+
+    status, body = fetch(f"http://127.0.0.1:{port}/callback?{query}")
+
+    assert status == 400
+    assert "SENTINEL" not in body
+    assert httpd.auth_code is None
+    assert httpd.auth_error is None
+    assert httpd.ignored == 1
+
+    # The real callback still lands afterwards.
+    fetch(f"http://127.0.0.1:{port}/callback?code=real&state=test-state")
+
+    assert httpd.auth_code == "real"
+
+
+def test_error_reason_cannot_write_escape_sequences_to_the_terminal():
+    """The reason is printed to stdout, so control characters must not survive."""
+    hostile = "\x1b[2J\x1b]0;pwned\x07access_denied"
+
+    cleaned = get_token.sanitize_for_terminal(hostile)
+
+    assert "\x1b" not in cleaned
+    assert "\x07" not in cleaned
+    assert "access_denied" in cleaned
+
+
+def test_sanitize_for_terminal_is_bounded_and_never_empty():
+    assert len(get_token.sanitize_for_terminal("x" * 500)) == 100
+    assert get_token.sanitize_for_terminal("\x1b\x07") == "unspecified error"
