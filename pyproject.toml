@@ -1,7 +1,7 @@
 [project]
 name = "spotify"
 version = "0.1.0"
-description = "Add your description here"
+description = "Export all your Spotify data before leaving the platform"
 requires-python = ">=3.13"
 dependencies = [
     "python-dotenv>=1.2.1",

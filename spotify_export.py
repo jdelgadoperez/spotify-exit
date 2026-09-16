@@ -240,6 +240,26 @@ class SpotifyExporter:
             return response.json()
 
     @staticmethod
+    def _renamed(obj: Dict, new_key: str, old_key: str, where: str):
+        """Read a key Spotify renamed in its 2026 migration, either spelling.
+
+        Both are accepted so apps still returning the pre-migration shape keep
+        working; the old branch can be dropped once those are gone.
+
+        The value may legitimately be None - a playlist can hold a track since
+        removed from Spotify. Neither spelling being present is different, and
+        raises: reading only the old name is what silently produced empty
+        playlist CSVs alongside a success message.
+        """
+        for candidate in (new_key, old_key):
+            if candidate in obj:
+                return obj[candidate]
+        raise SpotifyRequestError(
+            f"{where}: expected '{new_key}' or '{old_key}' "
+            f"(got keys: {sorted(obj)})"
+        )
+
+    @staticmethod
     def _page_items(endpoint: str, page: Dict, key: str = "items") -> List[Dict]:
         """Pull the item list out of a page, refusing a malformed response.
 
@@ -371,7 +391,7 @@ class SpotifyExporter:
 
             track_list = []
             for item in tracks:
-                track = item.get("track")
+                track = self._renamed(item, "item", "track", "playlist item")
                 if track:  # Sometimes track can be None for deleted songs
                     track_list.append(
                         {
@@ -393,7 +413,7 @@ class SpotifyExporter:
                 "owner": playlist.get("owner", {}).get("display_name"),
                 "public": playlist.get("public"),
                 "collaborative": playlist.get("collaborative"),
-                "tracks_total": playlist.get("tracks", {}).get("total"),
+                "tracks_total": len(tracks),
                 "spotify_url": playlist.get("external_urls", {}).get("spotify"),
                 "uri": playlist.get("uri"),
                 "tracks": track_list,

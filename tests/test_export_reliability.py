@@ -312,3 +312,77 @@ def test_refreshed_token_is_applied_to_the_session(exporter, monkeypatch):
 
     assert exporter.refresh_access_token() is True
     assert exporter.session.headers["Authorization"] == "Bearer new-token"
+
+
+# --- Spotify's 2026 key renames ------------------------------------------
+
+
+@pytest.mark.parametrize("key", ["item", "track"])
+def test_playlist_tracks_are_read_under_either_key(exporter, responses, key):
+    """Spotify renamed this key from `track` to `item` in 2026.
+
+    Reading only the old spelling yields no tracks at all, and the
+    "skip deleted tracks" guard turns that into an empty playlist CSV
+    plus a success message.
+    """
+    responses.append(page([{"id": "p1", "name": "Road Trip", "owner": {}}], total=1))
+    responses.append(
+        page(
+            [
+                {key: {"name": "Song A", "artists": [{"name": "Band"}]}},
+                {key: {"name": "Song B", "artists": [{"name": "Band"}]}},
+            ],
+            total=2,
+        )
+    )
+
+    playlists = exporter.export_playlists()
+
+    assert [t["name"] for t in playlists[0]["tracks"]] == ["Song A", "Song B"]
+
+
+def test_playlist_track_count_comes_from_what_was_fetched(exporter, responses):
+    """The playlist object's own count was renamed too, so it isn't read.
+
+    _paginate already fetched every item and _verify_complete already checked
+    that against Spotify's total, so the fetched count is both authoritative
+    and immune to the next rename.
+    """
+    responses.append(
+        page([{"id": "p1", "name": "Road Trip", "owner": {}, "tracks": {"total": 999}}], total=1)
+    )
+    responses.append(
+        page([{"item": {"name": "A", "artists": []}}, {"item": None}], total=2)
+    )
+
+    playlists = exporter.export_playlists()
+
+    assert playlists[0]["tracks_total"] == 2
+
+
+def test_renamed_prefers_the_new_key(exporter):
+    """Both spellings present: the post-migration one wins."""
+    item = {"item": {"name": "new"}, "track": {"name": "old"}}
+
+    assert exporter._renamed(item, "item", "track", "where")["name"] == "new"
+
+
+def test_renamed_returns_none_for_a_track_removed_from_spotify(exporter):
+    """A present-but-null key is a real, expected value - not a failure."""
+    assert exporter._renamed({"item": None}, "item", "track", "where") is None
+    assert exporter._renamed({"track": None}, "item", "track", "where") is None
+
+
+def test_renamed_raises_when_neither_spelling_is_present(exporter):
+    """A key going missing must never quietly read as "no data"."""
+    with pytest.raises(SpotifyRequestError, match="expected 'item' or 'track'"):
+        exporter._renamed({"unexpected": 1}, "item", "track", "playlist item")
+
+
+def test_unknown_playlist_item_shape_fails_the_export(exporter, responses):
+    """End-to-end: a third rename must not silently empty the CSV again."""
+    responses.append(page([{"id": "p1", "name": "Road Trip", "owner": {}}], total=1))
+    responses.append(page([{"entry": {"name": "Song A"}}], total=1))
+
+    with pytest.raises(SpotifyRequestError, match="playlist item"):
+        exporter.export_playlists()
