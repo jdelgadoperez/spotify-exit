@@ -8,6 +8,7 @@ import html
 import http.server
 import os
 import secrets
+import time
 import webbrowser
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -100,19 +101,20 @@ def get_authorization_url(state: str) -> str:
     return f"https://accounts.spotify.com/authorize?{urlencode(params)}"
 
 
-def wait_for_callback(httpd):
+def wait_for_callback(httpd, timeout: int = AUTH_TIMEOUT_SECONDS):
     """Serve requests until the callback arrives, or record why it didn't."""
-    # handle_request() blocks in select() for up to `timeout`, so this costs
-    # nothing while idle; the short timeout just bounds the overall deadline.
-    httpd.timeout = 5
-    remaining = AUTH_TIMEOUT_SECONDS
+    # handle_request() blocks in select() until a connection arrives or the
+    # poll interval elapses, so waiting costs nothing. The deadline is
+    # wall-clock, so serving stray requests doesn't eat into the time the
+    # user has to authorize.
+    httpd.timeout = 5  # how often the deadline is rechecked
+    deadline = time.monotonic() + timeout
 
     while httpd.auth_code is None and httpd.auth_error is None:
-        if remaining <= 0:
+        if time.monotonic() >= deadline:
             httpd.auth_error = "timed out waiting for authorization"
             return
         httpd.handle_request()
-        remaining -= httpd.timeout
 
 
 def main():

@@ -186,6 +186,16 @@ exports/
 - Top 50 tracks (all-time)
 - Top 50 artists (all-time)
 
+## Running the Tests
+
+```bash
+uv run pytest
+```
+
+The suite covers the OAuth callback server and the `.env` writer. It runs
+entirely against a local loopback server and temporary files — no Spotify
+credentials or network access needed.
+
 ## Limitations
 
 - **Rate Limiting**: The script includes small delays to avoid hitting API rate limits
