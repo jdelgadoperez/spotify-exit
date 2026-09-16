@@ -8,6 +8,8 @@ import requests
 import json
 import csv
 import os
+import random
+import sys
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -16,10 +18,24 @@ from typing import Dict, List, Optional
 from spotify_config import request_token, write_env
 
 
+class SpotifyRequestError(Exception):
+    """A Spotify API request failed and the export cannot be trusted."""
+
+
 class SpotifyExporter:
     """Export Spotify user data using the Spotify Web API."""
 
     BASE_URL = "https://api.spotify.com/v1"
+
+    REQUEST_TIMEOUT = 30
+    MAX_RETRIES = 5  # for network errors and 5xx
+    MAX_RATE_LIMIT_WAITS = 10  # 429s are expected, so budget them separately
+    BACKOFF_BASE = 2
+    MAX_BACKOFF = 30
+    # Applied between requests only after Spotify has rate limited us once, so
+    # a well-behaved export pays no flat tax but a throttled one backs off.
+    THROTTLE_STEP = 0.1
+    MAX_THROTTLE = 1.0
 
     def __init__(
         self,
@@ -34,10 +50,14 @@ class SpotifyExporter:
         self.client_id = client_id
         self.client_secret = client_secret
         self.refresh_token = refresh_token
-        self.headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        }
+        self.session = requests.Session()
+        self.session.headers.update(
+            {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            }
+        )
+        self.throttle = 0.0
         self.user_id = None
         self.exports_dir = "exports/spotify"
         self.resume = resume
@@ -72,7 +92,7 @@ class SpotifyExporter:
             return False
 
         self.access_token = token_data["access_token"]
-        self.headers["Authorization"] = f"Bearer {self.access_token}"
+        self.session.headers["Authorization"] = f"Bearer {self.access_token}"
         write_env(SPOTIFY_ACCESS_TOKEN=self.access_token)
 
         print("✓ Access token refreshed successfully")
@@ -130,57 +150,166 @@ class SpotifyExporter:
         playlists = progress.get(timestamp, {}).get("playlists", [])
         return playlist_id in playlists
 
-    def _make_request(self, endpoint: str, params: Optional[Dict] = None) -> Dict:
-        """Make authenticated request to Spotify API with rate limiting."""
-        url = f"{self.BASE_URL}/{endpoint}"
+    @staticmethod
+    def _retry_after_seconds(response) -> int:
+        """How long Spotify asked us to wait, with a sane fallback."""
         try:
-            response = requests.get(url, headers=self.headers, params=params)
+            return max(1, int(response.headers.get("Retry-After", 5)))
+        except (TypeError, ValueError):
+            return 5
 
-            # Handle 401 - try to refresh token
-            if response.status_code == 401:
-                print(f"\n⚠ Token expired, attempting to refresh...")
-                if self.refresh_access_token():
-                    # Retry request with new token
-                    response = requests.get(url, headers=self.headers, params=params)
-                else:
-                    print("\nERROR: Token refresh failed")
-                    print("Please run: uv run get_token.py")
-                    raise Exception("Authentication failed - please refresh token")
+    def _retry_or_give_up(self, failures: int, endpoint: str, reason: str):
+        """Sleep before retrying, or raise once the retry budget is spent."""
+        if failures >= self.MAX_RETRIES:
+            raise SpotifyRequestError(
+                f"{endpoint}: {reason} (gave up after {failures} attempts)"
+            )
 
-            response.raise_for_status()
-            time.sleep(0.1)  # Rate limiting
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error making request to {endpoint}: {e}")
-            if hasattr(e, "response") and e.response is not None:
-                print(f"Response status: {e.response.status_code}")
-                print(f"Response body: {e.response.text}")
-            return {}
+        # Jitter so concurrent retries don't re-collide on the same schedule.
+        delay = min(self.BACKOFF_BASE**failures, self.MAX_BACKOFF)
+        delay += random.uniform(0, delay / 4)
+        print(f"  ⚠ {endpoint}: {reason}")
+        print(f"    retrying in {delay:.1f}s ({failures}/{self.MAX_RETRIES})")
+        time.sleep(delay)
 
-    def _paginate(self, endpoint: str, limit: int = 50) -> List[Dict]:
-        """Paginate through API results."""
-        items = []
-        offset = 0
+    def _make_request(self, endpoint: str, params: Optional[Dict] = None) -> Dict:
+        """GET an endpoint, retrying transient failures.
+
+        Raises SpotifyRequestError rather than returning a partial or empty
+        result - a caller that silently treats a failure as "no more data"
+        produces a truncated export that looks complete.
+        """
+        url = f"{self.BASE_URL}/{endpoint}"
+        failures = 0
+        rate_limit_waits = 0
+        refreshed = False
 
         while True:
-            params = {"limit": limit, "offset": offset}
-            response = self._make_request(endpoint, params)
+            try:
+                response = self.session.get(
+                    url, params=params, timeout=self.REQUEST_TIMEOUT
+                )
+            except requests.exceptions.RequestException as e:
+                failures += 1
+                self._retry_or_give_up(failures, endpoint, f"network error: {e}")
+                continue
 
-            if not response or "items" not in response:
-                break
+            if response.status_code == 401:
+                if refreshed:
+                    raise SpotifyRequestError(
+                        f"{endpoint}: still unauthorized after refreshing the token"
+                    )
+                print("\n⚠ Token expired, attempting to refresh...")
+                if not self.refresh_access_token():
+                    raise SpotifyRequestError(
+                        "authentication failed - run: uv run get_token.py"
+                    )
+                refreshed = True
+                continue
 
-            batch = response["items"]
-            if not batch:
-                break
+            if response.status_code == 429:
+                rate_limit_waits += 1
+                if rate_limit_waits > self.MAX_RATE_LIMIT_WAITS:
+                    raise SpotifyRequestError(
+                        f"{endpoint}: still rate limited after "
+                        f"{self.MAX_RATE_LIMIT_WAITS} waits"
+                    )
+                # Back off between subsequent requests too, not just this one.
+                self.throttle = min(
+                    self.throttle + self.THROTTLE_STEP, self.MAX_THROTTLE
+                )
+                delay = self._retry_after_seconds(response)
+                print(f"  ⏳ Rate limited by Spotify, waiting {delay}s...")
+                time.sleep(delay)
+                continue
 
-            items.extend(batch)
-            print(f"  Fetched {len(items)} items...")
+            if response.status_code >= 500:
+                failures += 1
+                self._retry_or_give_up(
+                    failures, endpoint, f"server error {response.status_code}"
+                )
+                continue
 
-            if response.get("next") is None:
+            if not response.ok:
+                raise SpotifyRequestError(
+                    f"{endpoint} returned {response.status_code}: {response.text}"
+                )
+
+            if self.throttle:
+                time.sleep(self.throttle)
+            return response.json()
+
+    @staticmethod
+    def _page_items(endpoint: str, page: Dict, key: str = "items") -> List[Dict]:
+        """Pull the item list out of a page, refusing a malformed response.
+
+        A missing key must not quietly become an empty list - that is how a
+        failed fetch turns into an export that looks complete.
+        """
+        if key not in page:
+            raise SpotifyRequestError(
+                f"{endpoint}: response had no '{key}' (got keys: {sorted(page)})"
+            )
+        return page[key]
+
+    @staticmethod
+    def _verify_complete(
+        endpoint: str, collected: int, first_total, last_total
+    ) -> None:
+        """Check a finished collection against the totals Spotify reported.
+
+        Spotify re-reports the total on every page, so a total that changed
+        mid-export means the library itself changed - a playlist deleted, a
+        track saved from another device. That is not data loss, so it warns.
+        A short read against a total that never moved is a lost page, and the
+        export cannot be trusted.
+        """
+        if first_total is None or last_total is None:
+            return
+
+        if first_total != last_total:
+            print(
+                f"  ⚠ {endpoint}: library changed during export "
+                f"({first_total} → {last_total} items); collected {collected}"
+            )
+            return
+
+        if collected < first_total:
+            raise SpotifyRequestError(
+                f"{endpoint}: expected {first_total} items but collected "
+                f"{collected}. The export would be incomplete; re-run with "
+                "--resume."
+            )
+
+    def _paginate(self, endpoint: str, limit: int = 50) -> List[Dict]:
+        """Collect every page of a paginated endpoint.
+
+        Spotify reports how many items exist, so the result is checked against
+        that count: a short read means the export is incomplete and must not
+        be recorded as finished.
+        """
+        items = []
+        offset = 0
+        first_total = None
+        last_total = None
+
+        while True:
+            page = self._make_request(endpoint, {"limit": limit, "offset": offset})
+            items.extend(self._page_items(endpoint, page))
+
+            last_total = page.get("total")
+            if first_total is None:
+                first_total = last_total
+
+            progress = f"{len(items)} of {last_total}" if last_total else len(items)
+            print(f"  Fetched {progress} items...")
+
+            if not page.get("next"):
                 break
 
             offset += limit
 
+        self._verify_complete(endpoint, len(items), first_total, last_total)
         return items
 
     def get_user_profile(self) -> Dict:
@@ -324,6 +453,8 @@ class SpotifyExporter:
 
         artists_data = []
         after = None
+        first_total = None
+        last_total = None
 
         while True:
             params = {"type": "artist", "limit": 50}
@@ -331,15 +462,12 @@ class SpotifyExporter:
                 params["after"] = after
 
             response = self._make_request("me/following", params)
+            artists = self._page_items("me/following", response, key="artists")
+            batch = self._page_items("me/following", artists)
 
-            if not response or "artists" not in response:
-                break
-
-            artists = response["artists"]
-            batch = artists.get("items", [])
-
-            if not batch:
-                break
+            last_total = artists.get("total")
+            if first_total is None:
+                first_total = last_total
 
             for artist in batch:
                 artists_data.append(
@@ -355,12 +483,15 @@ class SpotifyExporter:
 
             print(f"  Fetched {len(artists_data)} artists...")
 
-            if artists.get("next") is None:
+            if not batch or artists.get("next") is None:
                 break
 
             # Get cursor for next page
-            if batch:
-                after = batch[-1].get("id")
+            after = batch[-1].get("id")
+
+        self._verify_complete(
+            "me/following", len(artists_data), first_total, last_total
+        )
 
         print(f"Exported {len(artists_data)} followed artists")
         return artists_data
@@ -396,7 +527,7 @@ class SpotifyExporter:
         response = self._make_request("me/top/tracks", params)
 
         tracks_data = []
-        for track in response.get("items", []):
+        for track in self._page_items("me/top/tracks", response):
             tracks_data.append(
                 {
                     "name": track.get("name") or "Unknown Track",
@@ -419,7 +550,7 @@ class SpotifyExporter:
         response = self._make_request("me/top/artists", params)
 
         artists_data = []
-        for artist in response.get("items", []):
+        for artist in self._page_items("me/top/artists", response):
             artists_data.append(
                 {
                     "name": artist.get("name") or "Unknown Artist",
@@ -468,8 +599,9 @@ class SpotifyExporter:
             print(f"Export session: {self.timestamp}")
             print("Data will be saved after each section is fetched\n")
 
-        # Get user profile
+        # Get user profile - also the first request, so it validates the token
         profile = self.get_user_profile()
+        print(f"✓ Token valid for user: {profile.get('display_name') or profile.get('id')}")
         profile_data = {
             "id": profile.get("id"),
             "display_name": profile.get("display_name"),
@@ -595,9 +727,26 @@ class SpotifyExporter:
                 pass
 
 
+def run_export(exporter: "SpotifyExporter"):
+    """Run the export, reporting an incomplete run as a failure.
+
+    Anything already written stays on disk, so `--resume` picks up from there
+    rather than starting over.
+    """
+    try:
+        exporter.export_all()
+    except SpotifyRequestError as e:
+        print("\n" + "=" * 60)
+        print("EXPORT INCOMPLETE")
+        print("=" * 60)
+        print(f"\n{e}\n")
+        print("Any data already exported has been saved. To continue:")
+        print("  uv run spotify_export.py --resume")
+        sys.exit(1)
+
+
 def main():
     """Main execution function."""
-    import sys
 
     # Check for resume flag
     resume = "--resume" in sys.argv
@@ -616,43 +765,10 @@ def main():
         print("\nSee README.md for the full walkthrough")
         return
 
-    # Validate token before starting
-    print("Validating access token...")
-    test_response = requests.get(
-        "https://api.spotify.com/v1/me",
-        headers={"Authorization": f"Bearer {access_token}"},
+    exporter = SpotifyExporter(
+        access_token, client_id, client_secret, refresh_token, resume=resume
     )
-
-    if test_response.status_code == 401:
-        print("⚠ Access token is invalid or expired")
-
-        if refresh_token and client_id and client_secret:
-            print("Attempting to refresh token...")
-            exporter = SpotifyExporter(
-                access_token, client_id, client_secret, refresh_token, resume=resume
-            )
-            if exporter.refresh_access_token():
-                print("✓ Token refreshed successfully, starting export...\n")
-                exporter.export_all()
-            else:
-                print("\nERROR: Token refresh failed")
-                print("Please run: uv run get_token.py")
-        else:
-            print("\nERROR: Cannot refresh token - missing credentials")
-            print("Please run: uv run get_token.py")
-    elif test_response.status_code == 200:
-        user_info = test_response.json()
-        print(
-            f"✓ Token valid for user: {user_info.get('display_name', user_info.get('id'))}\n"
-        )
-        exporter = SpotifyExporter(
-            access_token, client_id, client_secret, refresh_token, resume=resume
-        )
-        exporter.export_all()
-    else:
-        print(f"\nERROR: Unexpected response (status {test_response.status_code})")
-        print(f"Response: {test_response.text}")
-        print("\nPlease run: uv run get_token.py")
+    run_export(exporter)
 
 
 if __name__ == "__main__":
