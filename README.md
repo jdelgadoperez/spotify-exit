@@ -33,9 +33,11 @@ A Python script to export all your Spotify data before leaving the platform. Exp
 
 - **Robust Error Handling**:
   - Automatic token refresh on expiration
+  - Rate limits (HTTP 429) honored via `Retry-After`, with retries
+  - Transient network and server errors retried with exponential backoff
+  - Item counts verified against Spotify's reported totals, so a short read
+    fails loudly instead of producing a silently truncated export
   - Graceful handling of missing/null metadata
-  - Network timeout recovery
-  - Detailed error messages
 
 ## Setup
 
@@ -198,7 +200,7 @@ credentials or network access needed.
 
 ## Limitations
 
-- **Rate Limiting**: The script includes small delays to avoid hitting API rate limits
+- **Rate Limiting**: Handled automatically — the script honors Spotify's `Retry-After` header and retries, rather than dropping data
 - **Token Expiry**: Access tokens expire after 1 hour; the script refreshes them automatically using the refresh token saved in `.env`
 - **Listening History**: Spotify doesn't provide complete listening history via API (only top items)
 - **Podcast Episodes**: Individual episode saves are not easily accessible via current API
@@ -217,7 +219,17 @@ The script refreshes expired tokens automatically. If the refresh fails (for
 example, you revoked the app's access), run `uv run get_token.py` again.
 
 ### "Rate limit exceeded"
-Wait a few minutes and try again. The script includes rate limiting, but Spotify may still throttle requests.
+Handled automatically. The script waits for the interval Spotify asks for and
+retries, so no action is needed.
+
+### "EXPORT INCOMPLETE"
+A request failed persistently, or a section came back with fewer items than
+Spotify said exist. The export stops rather than writing a partial file that
+looks complete. Everything already exported is kept — continue with:
+
+```bash
+uv run spotify_export.py --resume
+```
 
 ### Missing playlists
 Make sure your token includes the `playlist-read-private` scope.
