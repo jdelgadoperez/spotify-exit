@@ -4,6 +4,16 @@
 
 A Python script to export all your Spotify data before leaving the platform. Exports playlists, saved tracks, albums, followed artists, podcasts, and listening statistics with migration-friendly formats (ISRC/UPC codes included).
 
+> ### ⚠️ Export before you cancel
+>
+> Since Spotify's February/March 2026 API changes, a Development Mode app
+> requires **its owner to hold an active Spotify Premium subscription**. If your
+> subscription lapses, the app stops working — so run your export *while you
+> still have Premium*, not after you cancel.
+>
+> The same changes removed some metadata fields; see
+> [Data Included](#data-included) for which ones.
+
 ## Features
 
 - **Complete Data Export**: All your Spotify library data in one go
@@ -84,7 +94,7 @@ each time it runs, so copy it from there.
 - `user-top-read` - Top tracks and artists
 - `playlist-read-private` - Private playlists
 - `playlist-read-collaborative` - Collaborative playlists
-- `user-read-email` - User profile
+- `user-read-email` - User profile (Spotify removed the `email` field in 2026, but the scope is still required to authorize)
 - `user-read-private` - User profile details
 
 ## Usage
@@ -95,7 +105,7 @@ each time it runs, so copy it from there.
 uv run spotify_export.py
 ```
 
-This will export all your data to the `exports/` directory.
+This will export all your data to the `exports/spotify/` directory.
 
 ### Resume Mode
 
@@ -106,7 +116,7 @@ uv run spotify_export.py --resume
 ```
 
 **How resume works:**
-- The script tracks progress in a hidden `.export_progress.json` file
+- The script tracks progress in `exports/spotify/.export_progress.json`
 - Already-exported playlists are skipped automatically
 - Completed sections (tracks, albums, artists) are skipped
 - Only fetches data that hasn't been exported yet
@@ -125,7 +135,7 @@ uv run spotify_export.py --resume
 The script creates:
 
 ```
-exports/
+exports/spotify/
 ├── spotify_full_export_YYYYMMDD_HHMMSS.json    # Complete data dump
 ├── saved_tracks_YYYYMMDD_HHMMSS.csv            # All saved songs
 ├── saved_albums_YYYYMMDD_HHMMSS.csv            # All saved albums
@@ -152,10 +162,14 @@ exports/
 
 ## Data Included
 
+Fields marked **(removed 2026)** were dropped by Spotify's February/March 2026
+API changes. Those columns export empty, or as an `Unknown …` placeholder where
+the script substitutes one. Everything unmarked is unaffected — including ISRC
+and UPC, which are what migrating to another service actually depends on.
+
 ### User Profile
-- Display name, email, country
-- Account type (free/premium)
-- Follower count
+- Display name
+- Email, country, account type, follower count **(removed 2026)**
 
 ### Saved Tracks
 - Track name, artist(s), album
@@ -175,18 +189,30 @@ exports/
 - Spotify URL and URI
 
 ### Followed Artists
-- Artist name, genres
-- Popularity score, follower count
+- Artist name
+- Genres **(deprecated 2026 — may be absent)**
+- Popularity score, follower count **(removed 2026)**
 - Spotify URL and URI
 
 ### Podcasts/Shows
-- Show name, publisher
-- Description, episode count
+- Show name, description, episode count
 - Date added
+- Publisher **(removed 2026)**
 
 ### Listening Stats
 - Top 50 tracks (all-time)
 - Top 50 artists (all-time)
+
+## Repository Contents
+
+| Path | What it is |
+|---|---|
+| `spotify_export.py` | The exporter — run this |
+| `get_token.py` | One-time OAuth setup, writes credentials to `.env` |
+| `spotify_config.py` | Shared config: redirect URI, scopes, `.env` location, token client |
+| `tests/` | Test suite (`uv run pytest`) |
+| `main.py` | Leftover `uv init` scaffolding, unused |
+| `alfred/` | An [Alfred](https://www.alfredapp.com/) workflow for controlling the macOS Spotify app. Unrelated to the export — kept here for convenience. |
 
 ## Running the Tests
 
@@ -194,9 +220,11 @@ exports/
 uv run pytest
 ```
 
-The suite covers the OAuth callback server and the `.env` writer. It runs
-entirely against a local loopback server and temporary files — no Spotify
-credentials or network access needed.
+The suite covers the OAuth callback server, the `.env` writer, and the export
+request layer (retries, rate limiting, and the checks that stop a truncated
+export being written out as complete). It runs entirely against a local
+loopback server and temporary files — no Spotify credentials or network access
+needed.
 
 ## Limitations
 
@@ -246,7 +274,7 @@ Verify your token has all required scopes and hasn't expired.
 
 ## License
 
-Free to use and modify for personal use.
+[MIT](LICENSE) — free to use, modify and distribute, including commercially.
 
 ## Acknowledgments
 
