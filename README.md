@@ -275,12 +275,12 @@ Verify your token has all required scopes and hasn't expired.
 
 ## Found this useful?
 
-It's free and staying that way — but if it saved you a subscription, a month's
-worth of one is very welcome:
+If you feel like kicking something back for the time that went into it, it's
+appreciated.
 
 [![Say thanks on Ko-fi](https://img.shields.io/badge/Ko--fi-Say%20thanks-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/jessdp)
 
-Or just star the repo — that helps too.
+A star works just as well.
 
 ## License
 

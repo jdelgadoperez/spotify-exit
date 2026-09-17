@@ -747,7 +747,7 @@ class SpotifyExporter:
                 pass
 
         # Last line on screen, and only after a run that actually worked.
-        print("\nThis tool is free - if it helped: https://ko-fi.com/jessdp")
+        print("\nIf this helped: https://ko-fi.com/jessdp")
 
 
 def run_export(exporter: "SpotifyExporter"):
