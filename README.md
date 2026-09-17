@@ -278,7 +278,9 @@ Verify your token has all required scopes and hasn't expired.
 Free, and staying that way. If it saved you a subscription, a month's worth of
 one is very welcome:
 
-**[ko-fi.com/jessdp](https://ko-fi.com/jessdp)** — or just star the repo.
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20this%20project-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/jessdp)
+
+Or just star the repo — that helps too.
 
 ## License
 
