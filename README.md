@@ -273,10 +273,10 @@ Verify your token has all required scopes and hasn't expired.
 - Tokens expire automatically for security
 - This script only reads data, it cannot modify your Spotify account
 
-## Made it out?
+## Found this useful?
 
-Hope the migration went smoothly. This is free and staying that way — but if it
-saved you a subscription, a month's worth of one is very welcome:
+It's free and staying that way — but if it saved you a subscription, a month's
+worth of one is very welcome:
 
 [![Say thanks on Ko-fi](https://img.shields.io/badge/Ko--fi-Say%20thanks-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/jessdp)
 
