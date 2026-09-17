@@ -212,6 +212,7 @@ and UPC, which are what migrating to another service actually depends on.
 | `spotify_config.py` | Shared config: redirect URI, scopes, `.env` location, token client |
 | `tests/` | Test suite (`uv run pytest`) |
 | `main.py` | Leftover `uv init` scaffolding, unused |
+| `.github/` | GitHub metadata — the funding link behind the Sponsor button |
 | `alfred/` | An [Alfred](https://www.alfredapp.com/) workflow for controlling the macOS Spotify app. Unrelated to the export — kept here for convenience. |
 
 ## Running the Tests
@@ -271,6 +272,15 @@ Verify your token has all required scopes and hasn't expired.
 - Never share your `.env` file or tokens publicly
 - Tokens expire automatically for security
 - This script only reads data, it cannot modify your Spotify account
+
+## Found this useful?
+
+If you feel like kicking something back for the time that went into it, it's
+appreciated.
+
+[![Say thanks on Ko-fi](https://img.shields.io/badge/Ko--fi-Say%20thanks-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/jessdp)
+
+A star works just as well.
 
 ## License
 

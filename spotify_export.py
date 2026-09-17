@@ -746,6 +746,9 @@ class SpotifyExporter:
             except:
                 pass
 
+        # Last line on screen, and only after a run that actually worked.
+        print("\nIf this helped: https://ko-fi.com/jessdp")
+
 
 def run_export(exporter: "SpotifyExporter"):
     """Run the export, reporting an incomplete run as a failure.
